@@ -11,12 +11,17 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.2",
+    "crypto": "^1.0.1",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "fs": "^0.0.1-security",
+    "google-auth-library": "^10.1.0",
     "helmet": "^6.2.0",
     "hsts": "^2.2.0",
     "https": "^1.0.0",
+    "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.15.2"
   }
 }

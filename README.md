@@ -125,3 +125,68 @@ curl -k https://localhost:3571/posts/1
 ---
 
  Built with Express, Helmet, and HTTPS for a secure Node.js foundation.
+
+
+
+
+# Phase 2: 
+
+A Node.js server implementing **JWT authentication**, **role-based access control**, and **HTTPS security**.
+
+## Features 
+
+- Secure login with JWT tokens
+- User roles (Admin/Student)
+- HTTPS encryption
+- Rate Limiting
+
+## Setup Instructions
+
+### 1. Install Dependencies
+
+```bash
+npm install express helmet bcryptjs jsonwebtoken express-rate-limit
+```
+
+### 2. Start the Server
+
+node server.js
+
+## API endpoint
+
+### Authentication
+
+#### POST /login
+
+
+json
+```bash
+{
+  "username": "admin_john",
+  "password": "secureAdmin456"
+}
+```
+
+Returns:
+
+```bash
+json
+{
+  "token": "eyJhb7878GciOi...",
+  "user": 
+  {
+    "username": "admin_john",
+    "role": "admin"
+  }
+}
+```
+More...
+
+
+## Error handling
+
+### 401 Unauthorized - Invalid login
+### 403 Forbidden - Invalid token o
+### 404 Not Found - Invalid route
+### 500 Internal Error - Server issues
+
