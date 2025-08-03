@@ -1,77 +1,127 @@
-// Basic server setup with HTTPS and security headers
-
 const express = require('express');
 const https = require('https');
 const fs = require('fs');
-const helmet = require('helmet');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const Database = require('better-sqlite3');
+const { body, validationResult } = require('express-validator');
+const CryptoJS = require('crypto-js');
+const cookieParser = require('cookie-parser');
 
 
 const app = express();
-const port = 3571; 
+const db = new Database('users.db');
 
+// Setup database
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT,
+    name TEXT,
+    email TEXT,
+    bio TEXT
+  )
+`);
 
-app.use(express.json()); 
-
-
-app.use(helmet());
-
-app.use(helmet.frameguard({ action: 'deny' })); 
-app.use(helmet.hsts({ maxAge: 31536000 })); 
-
-
-function setCache(time) {
-  return (req, res, next) => {
-    res.set('Cache-Control', `public, max-age=${time}`);
-    next();
-  };
+// Insert test user if none exists
+if (!db.prepare("SELECT * FROM users").get()) {
+  const hashedPass = bcrypt.hashSync('student123', 10);
+  db.prepare("INSERT INTO users (username, password, name, email, bio) VALUES (?, ?, ?, ?, ?)")
+    .run('student_user', hashedPass, 'Student', 'student@school.edu', 'Computer Science major');
 }
 
-app.get('/', (req, res) => {
-  res.send('Hello from my secure server!');
+// Middleware
+app.set('view engine', 'ejs');
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public'));
+
+app.use(cookieParser());
+
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
 });
 
+// Routes
+app.get('/', (req, res) => res.redirect('/login'));
+app.get('/login', (req, res) => res.render('login'));
 
-app.get('/posts', setCache(300), (req, res) => {
-  const posts = [
-    { id: 1, title: 'My first post', content: 'Learning about security' },
-    { id: 2, title: 'HTTPS is cool', content: 'Setting up certificates' }
-  ];
-  res.json(posts);
+app.post('/login', [
+  body('username').trim().escape(),
+  body('password').notEmpty()
+], (req, res) => {
+  const user = db.prepare("SELECT * FROM users WHERE username = ?").get(req.body.username);
+  
+  if (!user || !bcrypt.compareSync(req.body.password, user.password)) {
+    return res.status(401).send('Invalid credentials');
+  }
+
+  const token = jwt.sign({ id: user.id }, 'school_secret', { expiresIn: '1h' });
+  res.cookie('token', token, { httpOnly: true, secure: true }).redirect('/dashboard');
 });
 
-
-app.get('/posts/:id', setCache(300), (req, res) => {
-  const post = { 
-    id: req.params.id, 
-    title: `Post ${req.params.id}`, 
-    content: 'URL is working properly!' ,
-  };
-  res.json(post);
+app.get('/dashboard', (req, res) => {
+  try {
+    const token = req.cookies.token;
+    const decoded = jwt.verify(token, 'school_secret');
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(decoded.id);
+    
+    res.render('dashboard', { 
+      user: {
+        username: user.username,
+        name: user.name,
+        email: CryptoJS.AES.decrypt(user.email, 'school_key').toString(CryptoJS.enc.Utf8),
+        bio: user.bio
+      }
+    });
+  } catch (err) {
+    res.redirect('/login');
+  }
 });
 
-app.post('/posts', (req, res) => {
-  console.log('Would create post:', req.body);
-  res.send('Post created (not really)');
+const { check } = require('express-validator');
+
+app.post('/update-profile', [
+  check('name')
+    .isLength({ min: 3, max: 50 }).withMessage('Name must be 3-50 characters.')
+    .matches(/^[A-Za-z\s]+$/).withMessage('Name must contain only letters and spaces.')
+    .trim().escape(),
+
+  check('email')
+    .isEmail().withMessage('Invalid email address.')
+    .normalizeEmail(),
+
+  check('bio')
+    .isLength({ max: 500 }).withMessage('Bio must be less than 500 characters.')
+    .trim().escape()
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).send('Invalid input');
+  
+  try {
+    const token = req.cookies.token;
+    const decoded = jwt.verify(token, 'school_secret');
+    
+    const encryptedEmail = CryptoJS.AES.encrypt(req.body.email, 'school_key').toString();
+    
+    db.prepare("UPDATE users SET name = ?, email = ?, bio = ? WHERE id = ?")
+      .run(req.body.name, encryptedEmail, req.body.bio, decoded.id);
+      
+    res.send('Profile updated successfully!');
+  } catch (err) {
+    res.status(401).send('Unauthorized');
+  }
 });
 
-
-app.use((req, res) => {
-  res.status(404).send("Oops! That page doesn't exist.");
+app.get('/logout', (req, res) => {
+  res.clearCookie('token').redirect('/login');
 });
 
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).send('Something broke!');
-  });
-
-const options = {
+// Start HTTPS server
+https.createServer({
   key: fs.readFileSync('key.pem'),
   cert: fs.readFileSync('cert.pem')
-};
-
-
-https.createServer(options, app).listen(port, () => {
-  console.log(`Server running on https://localhost:${port}`);
-  console.log('Note: please allow continue if u get warning pop-screen');
+}, app).listen(3000, () => {
+  console.log('Secure server running on https://localhost:3000');
 });
-
